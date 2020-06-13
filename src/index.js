@@ -63,7 +63,7 @@ app.get('/author/:award', (req, res) => {
 app.get('/authors/:year', (req, res) => {
     
     const year = req.params.year
-     db.collection(collectionName).find({year : { $gte : 2000}}).toArray(function(err, result) {
+     db.collection(collectionName).find({year : { $gte : Number(year)}}).toArray(function(err, result) {
          if(err) throw err
          res.send(result)
      })

@@ -3,8 +3,9 @@ var app = express()
 const { MongoClient, ObjectID } = require('mongodb')
 
 const connectionURL = 'mongodb://127.0.0.1:27017'
-const databaseName = 'authorSDataBase'
-const collectionName = 'authors'
+const databaseName = 'authour'
+const authourCollectionName = 'authors'
+const booksCollectionName = 'books'
 
 const id = new ObjectID()
 
@@ -19,65 +20,79 @@ MongoClient.connect(connectionURL, { useNewUrlParser: true }, (error, client) =>
         return console.log("Database connection failed")
     }
     db = client.db(databaseName)
-
-    // var myobj = [
-    //     { auth_name: "Chetan Bhagath", date: new Date('1974-4-22'), year: 2004, award: 3, book: "Five Point Someone ", price: 200, bookSold: 150 },
-    //     { auth_name: "Amrita Pritam", date: new Date('1919-9-1'), year: 2008, award: 2, book: "Hell-Heaven", price: 150, bookSold: 100 },
-    //     { auth_name: "Jhumpa Lahiri", date: new Date('1967-7-10'), year: 2016, award: 4, book: "Black Rose", price: 130, bookSold: 180 },
-    //     { auth_name: "Khushwant Singh", date: new Date('1915-2-3'), year: 1950, award: 3, book: "The Mark of Vishnu and Other Storie", price: 180, bookSold: 200 },
-    //     { auth_name: "Khushwant Singh", date: new Date('1915-2-3'), year: 1953, award: 2, book: "The History of Sikhs", price: 100, bookSold: 200 },
-    //     { auth_name: "Chetan Bhagath", date: new Date('1974-4-22'), year: 2009, award: 5, book: "2 States", price: 300, bookSold: 300 },
-    //     { auth_name: "Chetan Bhagath", date: new Date('1974-4-22'), year: 2014, award: 3, book: "Half Girlfriend ", price: 180, bookSold: 400 },
-    //     { auth_name: "Amrita Pritam", date: new Date('1919-9-1'), year: 1947, award: 6, book: "Rasidi Ticket", price: 300, bookSold: 250 },
-    //     { auth_name: "Jhumpa Lahiri", date: new Date('1967-7-10'), year: 1999, award: 4, book: "A Temporary Matter1", price: 400, bookSold: 120 },
-    //     { auth_name: "Jhumpa Lahiri", date: new Date('1967-7-10'), year: 2008, award: 3, book: "Unaccustomed Earth", price: 200, bookSold: 150 }];
-    //     db.collection(collectionName).insertMany(myobj, function(err, res) {
-    //     if (err) throw err;
-    //     console.log(myobj.length, " document inserted");
-    //     //db.close();
-    //   })
 });
 
-app.post('/author', (req, res) => { 
+app.post('/author', (req, res) => {
     const date = new Date(req.body.date)
     req.body.date = date
     db.collection(collectionName).insert(req.body, (error, result) => {
-        if(error) {
+        if (error) {
             return res.status(500).send(error)
         }
         res.send(result)
     });
 })
 
+//Task:1-- Create GET api to fetch authors who have greater than or equal to n awards
 app.get('/author/:award', (req, res) => {
 
     const award = req.params.award
 
-    db.collection(collectionName).find({ award: { $gte: Number(award) } }).toArray(function (err, result) {
+    db.collection("authors").aggregate([
+        {
+            $project:{
+                _id : "$_id",
+                FirstName : "$name.first",
+                LastName : "$name.last",
+                NumOfAwards: {$size:{ "$ifNull": [ "$awards", [] ] }}
+            }
+        },
+        { $match : { NumOfAwards : { $gte : Number(award)}}}]      
+        
+    ).toArray(function (err, result) {
         if (err) throw err;
+        console.log(result)
         res.send(result)
     });
 
 })
 
+//Task:2--Create GET api to fetch authors who have won award where year >= y
 app.get('/authors/:year', (req, res) => {
-    
+
     const year = req.params.year
-     db.collection(collectionName).find({year : { $gte : Number(year)}}).toArray(function(err, result) {
-         if(err) throw err
-         res.send(result)
-     })
+
+    db.collection("authors").aggregate([
+       // {$unwind : "$awards"},
+        {
+            $project:{
+                _id : "$_id",
+                FirstName : "$name.first",
+                LastName : "$name.last",
+                year: "$awards.year"
+            }
+        },
+        { $match : { year : { $gte : Number(year)}}}]      
+        
+    ).toArray(function (err, result) {
+        if (err) throw err;
+        console.log(result)
+        res.send(result)
+    });
+    
 })
 
+//Task:3-- Create GET api to fetch total number of books sold and total profit by each author.
+
 app.get('/authorProfit', (req, res) => {
-    db.collection(collectionName).aggregate([
+    db.collection(booksCollectionName).aggregate([
         {
             $group: {
-                _id: "$auth_name",
-                totalbook: { $sum: "$bookSold" },
-                profit: {
+                _id: "$authorId",
+                totalbooksold: { $sum: "$sold" },
+                totalprofit: {
                     $sum: {
-                        $multiply: ["$bookSold", "$price"]
+                        $multiply: ["$sold", "$price"]
                     }
                 }
             }
@@ -87,31 +102,42 @@ app.get('/authorProfit', (req, res) => {
         })
 })
 
+//Task:4-- Create GET api which accepts parameter birthDate and totalPrice, where birthDate is
+//date string and totalPrice is number.
 
-app.get('/author/:date/:profit', (req, res) => {
+app.get('/author/:date/:price', (req, res) => {
     const date = req.params.date
-    const profit = req.params.profit
+    const price = req.params.price
 
-    db.collection(collectionName).aggregate([
-
+    db.collection("authors").aggregate([
         {
-            $match: { "date": { $gte: new Date(date) } }
-
+                $match: { "birth": { $gte: new Date(date) } }
+    
         },
 
         {
-            $group: {
-                _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
-                bookSold: { $sum: "$bookSold" }
-
-            }
-
-        },
-        {
-            $match: {
-                bookSold: { $gte: Number(profit) }
-            }
-        }
+            $lookup:
+              {
+                localField: "_id",
+                from: "books",
+                foreignField: "authorId",
+                as: "auothor_books"
+              }
+         },{
+             $unwind : "$auothor_books"
+         },
+         {
+             $group: {
+                 _id : "$auothor_books.authorId",         
+                  totalprice : {$sum : "$auothor_books.price"}
+                
+             }
+         },
+         {
+             $match:{
+                 totalprice : {$gte : Number(price)}
+             }
+         }
     ]).toArray(function (err, result) {
         if (err) throw err;
         res.send(result)
